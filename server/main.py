@@ -40,9 +40,11 @@ app = FastAPI(
     version="1.0.0"
 )
 origins = [
-    "https://market-trend-analysis.vercel.app",  # Your deployed Vercel frontend
-    "http://localhost:8080/",                     # Local development
+    "https://market-trend-analysis.vercel.app",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
 ]
+
 
 # ===== CORS Middleware =====
 app.add_middleware(
@@ -60,8 +62,9 @@ def calculate_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
     loss = -delta.where(delta < 0, 0)
     avg_gain = gain.rolling(period).mean()
     avg_loss = loss.rolling(period).mean()
-    rs = avg_gain / avg_loss
+    rs = avg_gain / avg_loss.replace(0, np.nan)
     rsi = 100 - (100 / (1 + rs))
+    rsi = rsi.fillna(50.0)  # neutral when undefined
     return rsi
 
 
@@ -188,8 +191,12 @@ def predict_stock_prices(df: pd.DataFrame, days_ahead: int = 1):
             pred_scaled = scaler.transform([last_row])
             all_tree_preds = np.array([tree.predict(pred_scaled)[0] for tree in model.estimators_])
             pred_price = model.predict(pred_scaled)[0]
+            pred_price = float(pred_price)
             # Confidence: higher if trees agree
-            confidence = 100 * (1 - np.std(all_tree_preds)/pred_price)
+            if pred_price == 0:
+                confidence = 0.0
+            else:
+                confidence = 100 * (1 - np.std(all_tree_preds)/pred_price)
             confidence = max(0, min(100, confidence))  # clamp to 0-100
             confidence = round(confidence, 2) 
         except Exception as e:
@@ -228,6 +235,7 @@ def predict_stock_prices(df: pd.DataFrame, days_ahead: int = 1):
 
 # ===== FastAPI Routes =====
 @app.get("/", response_class=HTMLResponse)
+@app.head("/")
 def home():
     html_content = """
     <h1>📈 Stock Price Prediction API</h1>
@@ -240,7 +248,6 @@ def home():
     </form>
     """
     return HTMLResponse(content=html_content)
-
 
 @app.get("/health")
 def health():
@@ -292,3 +299,7 @@ def predict(
         return JSONResponse(content={"error": str(exc)}, status_code=500)
 
 # ===== Run with: uvicorn main:app --reload =====
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
