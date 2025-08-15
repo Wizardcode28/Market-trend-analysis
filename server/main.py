@@ -39,13 +39,17 @@ app = FastAPI(
     description="Predict stock prices using Random Forest regression with Alpha Vantage or Yahoo Finance data.",
     version="1.0.0"
 )
+origins = [
+    "https://market-trend-analysis.vercel.app",  # Your deployed Vercel frontend
+    "http://localhost:8080/",                     # Local development
+]
 
 # ===== CORS Middleware =====
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change this in production
+    allow_origins=origins,  # Change this in production
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
