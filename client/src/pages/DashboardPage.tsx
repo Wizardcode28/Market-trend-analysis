@@ -16,11 +16,28 @@ import {
 } from "lucide-react";
 
 const tickers = [
-  { symbol: "AAPL", name: "Apple Inc." },
-  { symbol: "TSLA", name: "Tesla, Inc." },
-  { symbol: "TCS.NS", name: "Tata Consultancy Services" },
-  { symbol: "GOOGL", name: "Alphabet Inc." },
+  { symbol: "AMD",          name: "Advanced Micro Devices, Inc." },
+  { symbol: "AMZN",         name: "Amazon.com, Inc." },
+  { symbol: "AAPL",         name: "Apple Inc." },
+  { symbol: "AXISBANK.NS",  name: "Axis Bank Limited" },
+  { symbol: "GOOGL",        name: "Alphabet Inc. (Class A)" },
+  { symbol: "HDFCBANK.NS",  name: "HDFC Bank Limited" },
+  { symbol: "HINDUNILVR.NS",name: "Hindustan Unilever Limited" },
+  { symbol: "ICICIBANK.NS", name: "ICICI Bank Limited" },
+  { symbol: "INFY.NS",      name: "Infosys Limited" },
+  { symbol: "INTC",         name: "Intel Corporation" },
+  { symbol: "ITC.NS",       name: "ITC Limited" },
+  { symbol: "KOTAKBANK.NS", name: "Kotak Mahindra Bank Limited" },
+  { symbol: "LT.NS",        name: "Larsen & Toubro Limited" },
+  { symbol: "META",         name: "Meta Platforms, Inc." },
+  { symbol: "MSFT",         name: "Microsoft Corporation" },
+  { symbol: "NFLX",         name: "Netflix, Inc." },
+  { symbol: "NVDA",         name: "NVIDIA Corporation" },
+  { symbol: "RELIANCE.NS",  name: "Reliance Industries Limited" },
+  { symbol: "TCS.NS",       name: "Tata Consultancy Services Limited" },
+  { symbol: "TSLA",         name: "Tesla, Inc." },
 ];
+
 
 export default function DashboardPage() {
   // UI state
