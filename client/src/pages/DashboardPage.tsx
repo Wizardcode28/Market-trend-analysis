@@ -99,7 +99,7 @@ export default function DashboardPage() {
           // display predicted price nicely
           price: Number.isFinite(pred) ? `$${pred.toFixed(2)}` : "N/A",
           // difference from previous predicted day (for days > 0)
-          change:
+          change: 
             idx === 0
               ? "N/A"
               : (pred - Number(result.predictions[idx - 1]) >= 0 ? "+" : "-") +

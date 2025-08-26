@@ -33,7 +33,7 @@ const navigationItems = [
 const toolItems = [
   { title: "Market Analysis", url: "/analysis", icon: LineChart },
   { title: "Sentiment Tracker", url: "/sentiment", icon: TrendingUp },
-  { title: "AI Whisper", url: "/chat", icon: MessageSquare },
+  { title: "Model Insights", url: "/model-insights", icon: Brain },
 ];
 
 export function AppSidebar() {

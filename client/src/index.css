@@ -3,7 +3,11 @@
 @tailwind utilities;
 
 /* TrendVision AI Design System - Dark theme with neon accents */
-
+html, body {
+  height: 100%;
+  margin: 0;
+  background-color: #0c0d0f;
+}
 @layer base {
   :root {
     /* Dark theme palette */
