@@ -15,12 +15,12 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 from functools import lru_cache
-from googlesearch import search
-from newspaper import Article
+# from googlesearch import search
+# from newspaper import Article
 # import nltk
 import schedule
 from datetime import datetime, timezone
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+# from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 import math
 import time
 # nltk.download("punkt")
@@ -75,24 +75,6 @@ def get_model():
     except Exception as e:
         logger.exception("Failed to load model or scalers: %s", e)
         raise
-
-@lru_cache()
-def get_sentiment_model():
-    """
-    Returns a tuple (model_or_none, model_type_str) where model_type_str is 'joblib' or 'vader'.
-    Tries to load mod/sentiment_model.pkl (joblib). If not present, returns None and caller will
-    use VADER fallback.
-    """
-    model_path = "mod/sentiment_model.pkl"
-    if os.path.exists(model_path):
-        try:
-            mdl = joblib.load(model_path)
-            return mdl, "joblib"
-        except Exception as e:
-            logger.exception("Failed to load sentiment model from %s: %s", model_path, e)
-            return None, "vader"
-    # no saved model -> use vader
-    return None, "vader"
 
 
 # ---------- utilities ----------
@@ -785,7 +767,6 @@ async def predict_endpoint(
 # ---------- run ----------
 if __name__ == "__main__":
     import uvicorn
-
     port = int(os.environ.get("PORT", 8000))
     logger.info("Starting on port %s", port)
     uvicorn.run("main:app", host="0.0.0.0", port=port, log_level="info")
