@@ -42,10 +42,15 @@ app = FastAPI(
     description="Predict stock prices using a trained BiLSTM model (inference-only).",
     version="2.1.0",
 )
+#  Allow your Vercel frontend
+origins = [
+    "https://market-trend-analysis.vercel.app", 
+    "http://localhost:8080",                     # for local testing
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
