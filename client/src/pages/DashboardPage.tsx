@@ -1,19 +1,16 @@
 import React, { useEffect, useState } from "react";
-import { getPrediction } from "../api";
-
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import {
-  ArrowUpRight,
-  ArrowDownRight,
-  Brain,
-  Zap,
-  DollarSign,
-  Bitcoin,
-  BarChart3
-} from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, Brain, Zap, DollarSign, Bitcoin, BarChart3} from "lucide-react";
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine} from 'recharts';
+import { getPrediction } from "../api";
+
+type PriceRow = { date: string; close: number | null; ma20?: number | null; ma50?: number | null };
+type VolumeRow = { date: string; volume: number };
+type RsiRow = { date: string; rsi: number | null };
 
 const tickers = [
   { symbol: "AMD",          name: "Advanced Micro Devices, Inc." },
@@ -40,15 +37,14 @@ const tickers = [
 
 
 export default function DashboardPage() {
-  // UI state
-  const [selectedTicker, setSelectedTicker] = useState("AAPL");
-  const [marketData, setMarketData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Controls for user input
-  const [symbol, setSymbol] = useState<string>("AAPL"); // default
+  const [marketData, setMarketData] = useState<any[]>([]);
+  const [symbol, setSymbol] = useState<string>("AAPL");
   const [days, setDays] = useState<number>(5);
+  const [price_data, setprice_data] = useState([]);
+  const [volume_data, setvolume_data] = useState([]);
+  const [rsi_data, setrsi_data] = useState([]);
 
   const aiInsights = [
     { title: "Market Volatility Alert", description: "Increased volatility detected in crypto markets due to regulatory news.", severity: "warning" },
@@ -61,6 +57,10 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
     setMarketData([]);
+    setprice_data([]);
+    setvolume_data([]);
+    setrsi_data([]);
+
     try {
       const result = await getPrediction(stockSymbol, daysAhead);
 
@@ -82,6 +82,14 @@ export default function DashboardPage() {
         setLoading(false);
         return;
       }
+      if (!Array.isArray(result.price_data) || result.price_data.length === 0) {
+        setError("No Price Data returned by API");
+        setLoading(false);
+        return;
+      }
+      setprice_data(result.price_data as PriceRow[])
+      setvolume_data((result.volume_data ?? []) as VolumeRow[]);
+      setrsi_data((result.rsi_data ?? []) as RsiRow[]);
 
       // result.confidence may be an array (per-day) or single value
       const confArray = Array.isArray(result.confidence) ? result.confidence : null;
@@ -129,6 +137,11 @@ export default function DashboardPage() {
     fetchPredictions(symbol, days);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Defensive: show placeholder if chart data is empty
+  const hasPrice = price_data && price_data.length > 0;
+  const hasVolume = volume_data && volume_data.length > 0;
+  const hasRsi = rsi_data && rsi_data.length > 0;
 
   return (
     <div className="p-6 space-y-6">
@@ -184,9 +197,8 @@ export default function DashboardPage() {
             <p className="text-muted-foreground">Real-time market sentiment analysis</p>
           </div>
         </div>
-
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="text-center">
+           <div className="text-center">
             <div className="text-2xl font-bold text-primary mb-1">74%</div>
             <div className="text-sm text-muted-foreground">Overall Bullish</div>
           </div>
@@ -255,9 +267,98 @@ export default function DashboardPage() {
                   </div>
                 ))
               ) : (
-                <p>No market data available.</p>
+                <p>No Predictions available.</p>
               )}
             </div>
+
+          </Card>
+          <Card className="mt-6 p-4">
+                <Tabs defaultValue="price" className="w-full">
+                    <TabsList className="grid w-full grid-cols-3">
+                      <TabsTrigger value="price">Price & Moving Averages</TabsTrigger>
+                      <TabsTrigger value="volume">Trading Volume</TabsTrigger>
+                      <TabsTrigger value="rsi">RSI Analysis</TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value="price" className="mt-6">
+                      <div className="h-80 w-full">
+                        <h3 className="font-semibold text-foreground mb-4">{symbol} Stock Price with Moving Averages</h3>
+                        {!hasPrice ? (
+                          <div className="text-center text-muted-foreground">No price data available.</div>
+                        ) : (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={price_data}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                              <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" />
+                              <YAxis stroke="hsl(var(--muted-foreground))" />
+                              <Tooltip
+                                contentStyle={{
+                                  backgroundColor: "hsl(var(--card))",
+                                  border: "1px solid hsl(var(--border))",
+                                  borderRadius: "8px",
+                                }}
+                              />
+                              <Line type="monotone" dataKey="close" stroke="hsl(var(--primary))" strokeWidth={2} name="Close Price" />
+                              <Line type="monotone" dataKey="ma20" stroke="hsl(var(--accent))" strokeWidth={2} strokeDasharray="5 5" name="20-Day MA" />
+                              <Line type="monotone" dataKey="ma50" stroke="hsl(var(--muted-foreground))" strokeWidth={2} strokeDasharray="10 5" name="50-Day MA" />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        )}
+                      </div>
+                    </TabsContent>
+                    
+                    <TabsContent value="volume" className="mt-6">
+                      <div className="h-80 w-full">
+                        <h3 className="font-semibold text-foreground mb-4">{symbol} Trading Volume</h3>
+          {!hasVolume ? (
+                          <div className="text-center text-muted-foreground">No volume data available.</div>
+                        ) : (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={volume_data}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                              <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" />
+                              <YAxis stroke="hsl(var(--muted-foreground))" />
+                              <Tooltip
+                                contentStyle={{
+                                  backgroundColor: "hsl(var(--card))",
+                                  border: "1px solid hsl(var(--border))",
+                                  borderRadius: "8px",
+                                }}
+                              />
+                              <Bar dataKey="volume" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        )}
+                      </div>
+                    </TabsContent>
+                    
+                    <TabsContent value="rsi" className="mt-6">
+                      <div className="h-80 w-full">
+                        <h3 className="font-semibold text-foreground mb-4">{symbol} RSI (Relative Strength Index)</h3>
+                        {!hasRsi ? (
+                          <div className="text-center text-muted-foreground">No RSI data available.</div>
+                        ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={rsi_data}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                            <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" />
+                            <YAxis domain={[0, 100]} stroke="hsl(var(--muted-foreground))" />
+                            <Tooltip 
+                              contentStyle={{ 
+                                backgroundColor: "hsl(var(--card))",
+                                border: "1px solid hsl(var(--border))",
+                                borderRadius: "8px"
+                              }} 
+                            />
+                            <ReferenceLine y={70} stroke="hsl(var(--destructive))" strokeDasharray="5 5" label="Overbought (70)" />
+                            <ReferenceLine y={30} stroke="hsl(var(--primary))" strokeDasharray="5 5" label="Oversold (30)" />
+                            <Line type="monotone" dataKey="rsi" stroke="hsl(var(--accent))" strokeWidth={3} name="RSI" />
+                          </LineChart>
+                        </ResponsiveContainer>
+                       )}
+                      </div>
+                    </TabsContent>
+                </Tabs>
           </Card>
         </div>
 

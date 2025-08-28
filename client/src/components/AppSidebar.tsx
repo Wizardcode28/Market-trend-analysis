@@ -25,13 +25,11 @@ import {
 const navigationItems = [
   { title: "Home", url: "/", icon: Home },
   { title: "Dashboard", url: "/dashboard", icon: BarChart3 },
-  { title: "TrendPulse", url: "/trendpulse", icon: Zap },
   { title: "News & Insights", url: "/news", icon: Newspaper },
   { title: "AI Models", url: "/about", icon: Brain },
 ];
 
 const toolItems = [
-  { title: "Market Analysis", url: "/analysis", icon: LineChart },
   { title: "Sentiment Tracker", url: "/sentiment", icon: TrendingUp },
   { title: "Model Insights", url: "/model-insights", icon: Brain },
 ];

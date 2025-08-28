@@ -4,8 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState,useEffect } from "react";
-import { getData } from "../api";
-import axios from "axios";
+// import { getData } from "../api";
 import {
   LineChart,
   Line,

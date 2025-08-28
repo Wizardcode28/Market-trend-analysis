@@ -14,16 +14,14 @@ export async function getPrediction(stock_symbol: string, days_ahead: number) {
   }
 }
 
-export async function getData(stock_symbol: string) {
+export async function getSentiment(company: string, num_articles: number = 5) {
   try {
-    const url = `${API_BASE}/fetch`;
-    console.log("GET", url, { stock_symbol });
-    const res = await axios.get(url, { params: { stock_symbol } });
-    console.log("API response", res.status, res.data);
-    if (res.status !== 200) throw new Error(`Status ${res.status}`);
-    return res.data;
+    const res = await axios.get(`${API_BASE}/sentiment`, {
+      params: { company, num_articles },
+    });
+    return res.data;  // This will be the array of news items
   } catch (err) {
-    console.error("API error:", err);
-    throw err; // rethrow so caller sees real error
+    console.error("Sentiment API error:", err);
+    return null;
   }
 }

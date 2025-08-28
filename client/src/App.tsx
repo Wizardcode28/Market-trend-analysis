@@ -8,7 +8,6 @@ import HomePage from "./pages/HomePage";
 import DashboardPage from "./pages/DashboardPage";
 import NewsPage from "./pages/NewsPage";
 import AboutPage from "./pages/AboutPage";
-import TrendPulsePage from "./pages/TrendPulsePage";
 import SentimentTrackerPage from "./pages/SentimentTrackerPage";
 import ModelInsightsPage from "./pages/ModelInsightsPage";
 import NotFound from "./pages/NotFound";
@@ -25,7 +24,6 @@ const App = () => (
           <Route path="/" element={<HomePage />} />
           <Route element={<Layout />}>
             <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/trendpulse" element={<TrendPulsePage />} />
             <Route path="/sentiment" element={<SentimentTrackerPage />} />
             <Route path="/model-insights" element={<ModelInsightsPage />} />
             <Route path="/news" element={<NewsPage />} />
