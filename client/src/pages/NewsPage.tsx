@@ -77,7 +77,7 @@ export default function NewsPage() {
           setNewsItems(normalized);
         }
       } catch (err: any) {
-        console.error("Failed to load news:", err);
+        // console.error("Failed to load news:", err);
         if (isMounted) setError(err?.message ?? String(err));
       } finally {
         if (isMounted) setLoading(false);

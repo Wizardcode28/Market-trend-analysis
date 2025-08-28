@@ -25,7 +25,7 @@ import {
 const navigationItems = [
   { title: "Home", url: "/", icon: Home },
   { title: "Dashboard", url: "/dashboard", icon: BarChart3 },
-  { title: "News & Insights", url: "/news", icon: Newspaper },
+  // { title: "News & Insights", url: "/news", icon: Newspaper },
   { title: "AI Models", url: "/about", icon: Brain },
 ];
 
