@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 import math
 import time
-nltk.download("punkt")
+# nltk.download("punkt")
 # nltk.download("stopwords")
 
 # ---------- config ----------
@@ -52,7 +52,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -543,94 +543,94 @@ def predict_stock_prices_sync(df: pd.DataFrame, days_ahead: int = 1, lookback: i
     confs_out = [float(c) for c in confs]
     return preds_out, confs_out, float(mae), float(r2)
 
-def fetch_news_urls(company_name, num_articles=5):
-    """
-    Fetch news URLs for a company using googlesearch.
-    Works with older 'googlesearch' (no stop) or googlesearch-python (with num_results).
-    """
-    try:
-        from googlesearch import search
-    except ImportError:
-        print("Please install googlesearch-python: pip install googlesearch-python")
-        return []
+# def fetch_news_urls(company_name, num_articles=5):
+#     """
+#     Fetch news URLs for a company using googlesearch.
+#     Works with older 'googlesearch' (no stop) or googlesearch-python (with num_results).
+#     """
+#     try:
+#         from googlesearch import search
+#     except ImportError:
+#         print("Please install googlesearch-python: pip install googlesearch-python")
+#         return []
 
-    query = f"{company_name} stock news"
-    urls = []
+#     query = f"{company_name} stock news"
+#     urls = []
 
-    try:
-        # Try googlesearch-python signature
-        for url in search(query, num_results=num_articles):
-            urls.append(url)
-    except TypeError:
-        # Fallback for old googlesearch signature
-        for i, url in enumerate(search(query, num=num_articles, pause=2)):
-            urls.append(url)
-            if i + 1 >= num_articles:
-                break
+#     try:
+#         # Try googlesearch-python signature
+#         for url in search(query, num_results=num_articles):
+#             urls.append(url)
+#     except TypeError:
+#         # Fallback for old googlesearch signature
+#         for i, url in enumerate(search(query, num=num_articles, pause=2)):
+#             urls.append(url)
+#             if i + 1 >= num_articles:
+#                 break
 
-    return urls
-
-
-def extract_article(url):
-    try:
-        article = Article(url)
-        article.download()
-        article.parse()
-        article.nlp()
-        return {
-            "title": article.title,
-            "text": article.text,
-            "summary": getattr(article, "summary", ""),
-            "source": article.source_url if hasattr(article, "source_url") else "",
-            "published": article.publish_date.strftime("%Y-%m-%d %H:%M") if article.publish_date else None,
-            "url": url,
-        }
-    except Exception as e:
-        logger.warning("Failed to extract article from %s: %s", url, e)
-        return {"url": url, "error": str(e)}  # 👈 return debug info instead of None
+#     return urls
 
 
-def analyze_sentiment(text):
-    analyzer = SentimentIntensityAnalyzer()
-    return analyzer.polarity_scores(text)  # returns dict with pos, neg, neu, compound
-
-def company_sentiment(company_name, num_articles=5):
-    urls = fetch_news_urls(company_name, num_articles)
-
-    print("Fetched URLs:", urls)  # Debug: show fetched URLs
-
-    all_text = ""
-
-    for url in urls:
-        art = extract_article(url)
-        if not art or not art["text"]:
-            continue
-        print("\nArticle text preview:", art["text"][:200])
-        all_text += art["text"] + "\n"
-
-    if not all_text.strip():
-        print("No text extracted from articles.")
-        return None  # no news found
-
-    sentiment = analyze_sentiment(all_text)
-    sentiment['date'] = datetime.now().strftime("%Y-%m-%d")
-    sentiment['company'] = company_name
-    return sentiment
+# def extract_article(url):
+#     try:
+#         article = Article(url)
+#         article.download()
+#         article.parse()
+#         article.nlp()
+#         return {
+#             "title": article.title,
+#             "text": article.text,
+#             "summary": getattr(article, "summary", ""),
+#             "source": article.source_url if hasattr(article, "source_url") else "",
+#             "published": article.publish_date.strftime("%Y-%m-%d %H:%M") if article.publish_date else None,
+#             "url": url,
+#         }
+#     except Exception as e:
+#         logger.warning("Failed to extract article from %s: %s", url, e)
+#         return {"url": url, "error": str(e)}  # 👈 return debug info instead of None
 
 
-def save_sentiment_trend(company_name, num_articles=5, csv_file="sentiment_trend.csv"):
-    sentiment = company_sentiment(company_name, num_articles)
-    if sentiment:
-        try:
-            df = pd.read_csv(csv_file)
-        except FileNotFoundError:
-            df = pd.DataFrame()
+# def analyze_sentiment(text):
+#     analyzer = SentimentIntensityAnalyzer()
+#     return analyzer.polarity_scores(text)  # returns dict with pos, neg, neu, compound
 
-        df = pd.concat([df, pd.DataFrame([sentiment])], ignore_index=True)
-        df.to_csv(csv_file, index=False)
-        print(f"Saved sentiment for {company_name} on {sentiment['date']}")
-    else:
-        print("No news found today.")
+# def company_sentiment(company_name, num_articles=5):
+#     urls = fetch_news_urls(company_name, num_articles)
+
+#     print("Fetched URLs:", urls)  # Debug: show fetched URLs
+
+#     all_text = ""
+
+#     for url in urls:
+#         art = extract_article(url)
+#         if not art or not art["text"]:
+#             continue
+#         print("\nArticle text preview:", art["text"][:200])
+#         all_text += art["text"] + "\n"
+
+#     if not all_text.strip():
+#         print("No text extracted from articles.")
+#         return None  # no news found
+
+#     sentiment = analyze_sentiment(all_text)
+#     sentiment['date'] = datetime.now().strftime("%Y-%m-%d")
+#     sentiment['company'] = company_name
+#     return sentiment
+
+
+# def save_sentiment_trend(company_name, num_articles=5, csv_file="sentiment_trend.csv"):
+#     sentiment = company_sentiment(company_name, num_articles)
+#     if sentiment:
+#         try:
+#             df = pd.read_csv(csv_file)
+#         except FileNotFoundError:
+#             df = pd.DataFrame()
+
+#         df = pd.concat([df, pd.DataFrame([sentiment])], ignore_index=True)
+#         df.to_csv(csv_file, index=False)
+#         print(f"Saved sentiment for {company_name} on {sentiment['date']}")
+#     else:
+#         print("No news found today.")
 
 # ---------- routes ----------
 @app.get("/", response_class=HTMLResponse)
@@ -641,69 +641,69 @@ def home():
     """
 
 # ---------- route: /sentiment (formatted to match your TSX shape) ----------
-@app.get("/sentiment")
-def sentiment_route(company: str = Query(...), num_articles: int = 5, debug: bool = False):
-    try:
-        urls = fetch_news_urls(company, num_articles)
-        logger.info("Fetched URLs for %s: %s", company, urls)
+# @app.get("/sentiment")
+# def sentiment_route(company: str = Query(...), num_articles: int = 5, debug: bool = False):
+#     try:
+#         urls = fetch_news_urls(company, num_articles)
+#         logger.info("Fetched URLs for %s: %s", company, urls)
 
-        if not urls:
-            return JSONResponse(
-                {"error": f"No articles found for {company}"},
-                status_code=404,
-            )
+#         if not urls:
+#             return JSONResponse(
+#                 {"error": f"No articles found for {company}"},
+#                 status_code=404,
+#             )
 
-        results = []
-        for url in urls:
-            try:
-                art = extract_article(url)
-                if not art or not art["text"]:
-                    logger.warning("Skipped article %s due to missing text. Error: %s", art.get("url"), art.get("error"))
-                    continue
+#         results = []
+#         for url in urls:
+#             try:
+#                 art = extract_article(url)
+#                 if not art or not art["text"]:
+#                     logger.warning("Skipped article %s due to missing text. Error: %s", art.get("url"), art.get("error"))
+#                     continue
 
-                logger.info("Analyzing article: %s", art["title"])
-                sentiment_scores = analyze_sentiment(art["text"])
-                compound = sentiment_scores.get("compound", 0.0)
-                confidence = abs(compound) * 100
+#                 logger.info("Analyzing article: %s", art["title"])
+#                 sentiment_scores = analyze_sentiment(art["text"])
+#                 compound = sentiment_scores.get("compound", 0.0)
+#                 confidence = abs(compound) * 100
 
-                impact = "high" if confidence > 70 else "medium" if confidence > 40 else "low"
+#                 impact = "high" if confidence > 70 else "medium" if confidence > 40 else "low"
 
-                results.append({
-                    "title": art["title"],
-                    "summary": art["summary"],
-                    "source": art["source"],
-                    "time": art["published"] or datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "sentiment": sentiment_scores,
-                    "impact": impact,
-                    "aiConfidence": round(confidence, 2),
-                    "url": art["url"]
-                })
-            except Exception as e:
-                tb = traceback.format_exc()
-                logger.error("Error processing article %s: %s\n%s", url, e, tb)
-                if debug:
-                    results.append({
-                        "error": str(e),
-                        "traceback": tb,
-                        "url": url
-                    })
-                continue
+#                 results.append({
+#                     "title": art["title"],
+#                     "summary": art["summary"],
+#                     "source": art["source"],
+#                     "time": art["published"] or datetime.now().strftime("%Y-%m-%d %H:%M"),
+#                     "sentiment": sentiment_scores,
+#                     "impact": impact,
+#                     "aiConfidence": round(confidence, 2),
+#                     "url": art["url"]
+#                 })
+#             except Exception as e:
+#                 tb = traceback.format_exc()
+#                 logger.error("Error processing article %s: %s\n%s", url, e, tb)
+#                 if debug:
+#                     results.append({
+#                         "error": str(e),
+#                         "traceback": tb,
+#                         "url": url
+#                     })
+#                 continue
 
-        if not results:
-            return JSONResponse(
-                {"error": f"Articles fetched but none could be parsed for {company}"},
-                status_code=502,
-            )
+#         if not results:
+#             return JSONResponse(
+#                 {"error": f"Articles fetched but none could be parsed for {company}"},
+#                 status_code=502,
+#             )
 
-        return results
+#         return results
 
-    except Exception as exc:
-        tb = traceback.format_exc()
-        logger.error("Sentiment route error: %s\n%s", exc, tb)
-        return JSONResponse(
-            {"error": str(exc), "traceback": tb if debug else None},
-            status_code=500,
-        )
+#     except Exception as exc:
+#         tb = traceback.format_exc()
+#         logger.error("Sentiment route error: %s\n%s", exc, tb)
+#         return JSONResponse(
+#             {"error": str(exc), "traceback": tb if debug else None},
+#             status_code=500,
+        # )
 # def sentiment_route(company: str = Query(...), num_articles: int = 5):
 #     urls = fetch_news_urls(company, num_articles)
 #     if not urls:
