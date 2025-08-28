@@ -17,7 +17,7 @@ from starlette.concurrency import run_in_threadpool
 from functools import lru_cache
 from googlesearch import search
 from newspaper import Article
-import nltk
+# import nltk
 import schedule
 from datetime import datetime, timezone
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
@@ -52,7 +52,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
