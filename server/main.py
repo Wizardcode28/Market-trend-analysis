@@ -217,9 +217,10 @@ def _safe_scalar(val: Any):
 # ---------- data fetcher ----------
 def fetch_stock_data(symbol: str, outputsize: str = "compact", timeout: int = 10) -> Tuple[pd.DataFrame, Dict]:
     """
-    Fetch historical daily data via AlphaVantage CSV (preferred) and fall back to yfinance.
-    Returns: (normalized_df, charts_dict)
-    The returned DataFrame will include short aliases: 'open','high','low','close','volume'
+    Fetch historical daily data via AlphaVantage CSV (preferred) and fall back to yfinance,
+    and finally fallback to a direct Yahoo chart JSON endpoint if yfinance fails.
+
+    Returns (normalized_df, charts_dict)
     """
     e_av = None
     df = None
@@ -232,7 +233,13 @@ def fetch_stock_data(symbol: str, outputsize: str = "compact", timeout: int = 10
             f"&outputsize={outputsize}&apikey={ALPHA_VANTAGE_API_KEY}&datatype=csv"
         )
         logger.info("Fetching CSV from AlphaVantage: %s", url)
-        df = safe_read_csv_from_url(url, timeout=timeout)
+        try:
+            df = safe_read_csv_from_url(url, timeout=timeout)
+        except Exception as e_csv:
+            # log response body if possible (safe_read_csv_from_url already raises with message)
+            e_av = e_csv
+            raise
+
         if df is None or getattr(df, "empty", True):
             raise RuntimeError("AlphaVantage returned empty CSV")
 
@@ -250,29 +257,96 @@ def fetch_stock_data(symbol: str, outputsize: str = "compact", timeout: int = 10
         if df.empty:
             raise RuntimeError("AlphaVantage returned empty after normalization")
 
-    except Exception as e_av:
-        logger.warning("AlphaVantage CSV failed for %s: %s", symbol, e_av)
+        logger.info("AlphaVantage CSV succeeded for %s with %d rows", symbol, len(df))
+
+    except Exception as exc_av:
+        # keep AV exception for reporting and fall back
+        e_av = exc_av
+        logger.warning("AlphaVantage CSV failed for %s: %s", symbol, exc_av)
         df = None
 
     # Fallback: yfinance
+    e_yf = None
     if df is None:
         try:
             import yfinance as yf
             logger.info("Falling back to yfinance for symbol %s", symbol)
-            df = yf.download(symbol, period="1y", progress=False)
+            # threads=False to avoid threading issues on some hosts
+            df = yf.download(symbol, period="1y", progress=False, threads=False)
             if df is None or df.empty:
                 raise RuntimeError("yfinance returned empty")
-            # flatten multiindex (if any) and normalize
             df = _flatten_multiindex_columns(df)
             df.index = pd.to_datetime(df.index)
             df = _normalize_columns(df)
             df = df.sort_index()
-        except Exception as e_yf:
-            logger.exception("yfinance fallback failed for %s: %s", symbol, e_yf)
+            logger.info("yfinance succeeded for %s with %d rows", symbol, len(df))
+        except Exception as exc_yf:
+            e_yf = exc_yf
+            logger.warning("yfinance fallback failed for %s: %s", symbol, exc_yf)
+            df = None
+
+    # Final fallback: direct Yahoo JSON endpoint (robust)
+    if df is None:
+        try:
+            logger.info("Attempting direct Yahoo chart JSON for %s", symbol)
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+            params = {"range": "1y", "interval": "1d", "includePrePost": "false"}
+            resp = requests.get(url, params=params, timeout=15)
+            resp.raise_for_status()
+            j = resp.json()
+
+            # Drill into JSON safely
+            result = None
+            if isinstance(j, dict):
+                chart = j.get("chart", {})
+                results = chart.get("result")
+                if results and len(results) > 0:
+                    result = results[0]
+
+            if not result:
+                raise RuntimeError(f"Yahoo chart JSON returned no result for {symbol}: {j}")
+
+            timestamps = result.get("timestamp")
+            indicators = result.get("indicators", {})
+            quote = indicators.get("quote")
+            if not timestamps or not quote or not isinstance(quote, list) or len(quote) == 0:
+                raise RuntimeError(f"Yahoo chart JSON missing quote/timestamp for {symbol}: {j}")
+
+            q = quote[0]
+            opens = q.get("open", [])
+            highs = q.get("high", [])
+            lows = q.get("low", [])
+            closes = q.get("close", [])
+            volumes = q.get("volume", [])
+
+            df = pd.DataFrame({
+                "open": opens,
+                "high": highs,
+                "low": lows,
+                "close": closes,
+                "volume": volumes,
+            }, index=pd.to_datetime(timestamps, unit="s"))
+
+            # drop rows that are all NaN (some APIs include trailing None)
+            df = df.dropna(how="all")
+            if df is None or df.empty:
+                raise RuntimeError(f"Yahoo JSON produced empty df for {symbol}")
+
+            df = _normalize_columns(df)
+            df = df.sort_index()
+            logger.info("Yahoo JSON fallback succeeded for %s with %d rows", symbol, len(df))
+
+        except Exception as e_yahoo:
+            logger.exception("Yahoo JSON fallback failed for %s: %s", symbol, e_yahoo)
+            # raise a combined error, include each provider error if present
             raise RuntimeError(
-                f"Data fetch failed for {symbol}. AV error: {e_av if 'e_av' in locals() else 'n/a'}; yfinance error: {e_yf}"
+                f"Data fetch failed for {symbol}. "
+                f"AV error: {repr(e_av) if e_av is not None else 'n/a'}; "
+                f"yfinance error: {repr(e_yf) if e_yf is not None else 'n/a'}; "
+                f"yahoo_json error: {repr(e_yahoo)}"
             )
 
+    # At this point df should be valid
     # Ensure short aliases exist (open/high/low/close/volume)
     alias_pairs = [
         ("1. open", "open"),
@@ -287,29 +361,25 @@ def fetch_stock_data(symbol: str, outputsize: str = "compact", timeout: int = 10
         elif short_name in df.columns and long_name not in df.columns:
             df[long_name] = df[short_name]
 
-    # drop exact duplicate labels
     df = df.loc[:, ~df.columns.duplicated()]
 
-    # Defensive required columns
     required = ["open", "high", "low", "close", "volume"]
     missing = [c for c in required if c not in df.columns]
     if missing:
         logger.error("Missing required columns after normalization: %s", missing)
         raise ValueError(f"Missing required column(s) {missing} after normalization. Available: {list(df.columns)}")
 
-    # Derived indicators using short 'close' column
+    # Derived indicators
     df["ma20"] = df["close"].rolling(window=20).mean()
     df["ma50"] = df["close"].rolling(window=50).mean()
     df["rsi"] = calculate_rsi(df["close"])
 
-    # Ensure index is datetime for resampling
+    # Ensure datetime index
     if not pd.api.types.is_datetime64_any_dtype(df.index):
         df.index = pd.to_datetime(df.index, errors="coerce")
         if df.index.isnull().any():
-            # fallback to a date range (rare)
             df.index = pd.date_range(end=pd.Timestamp.now(), periods=len(df))
 
-    # Monthly snapshot for charts
     df_monthly = df.resample("M").last()
 
     price_data = []
