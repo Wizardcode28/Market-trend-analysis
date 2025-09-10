@@ -1,7 +1,7 @@
 # main.py
 import io
 import os
-import json
+import json,itertools
 import traceback
 import logging
 from typing import Optional, Tuple, Dict, Any
@@ -32,6 +32,17 @@ API_KEY = os.getenv("MY_SECRET_API_KEY")
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", API_KEY)
 AV_BASE_URL = "https://www.alphavantage.co/query"
 
+# Key rotation, Loading all keys from env
+keys_raw = os.getenv("ALPHA_VANTAGE_KEYS", "")
+ALPHA_KEYS = [k.strip() for k in keys_raw.split(",") if k.strip()]
+
+# Create a round-robin cycle iterator
+key_cycle = itertools.cycle(ALPHA_KEYS)
+
+def get_next_av_key():
+    """Return the next API key in round-robin fashion"""
+    return next(key_cycle)
+    
 # Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("stock-predict")
@@ -228,9 +239,10 @@ def fetch_stock_data(symbol: str, outputsize: str = "compact", timeout: int = 10
 
     # Try AlphaVantage CSV first
     try:
+        av_key= get_next_av_key()
         url = (
             f"{AV_BASE_URL}?function=TIME_SERIES_DAILY&symbol={symbol}"
-            f"&outputsize={outputsize}&apikey={ALPHA_VANTAGE_API_KEY}&datatype=csv"
+            f"&outputsize={outputsize}&apikey={av_key}&datatype=csv"
         )
         logger.info("Fetching CSV from AlphaVantage: %s", url)
         try:
