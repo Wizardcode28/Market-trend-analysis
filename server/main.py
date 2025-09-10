@@ -1,5 +1,5 @@
 # main.py
-import io
+import io,inspect
 import os
 import json,itertools
 import traceback
@@ -225,50 +225,47 @@ def _safe_scalar(val: Any):
     return val
 
 
-# ---------- data fetcher ----------
-def fetch_stock_data(symbol: str, outputsize: str = "compact", timeout: int = 20) -> Tuple[pd.DataFrame, Dict]:
+import itertools
+import inspect
+
+def fetch_stock_data(symbol: str, outputsize: str = "compact", timeout: int = 10) -> Tuple[pd.DataFrame, Dict]:
     """
-    Fetch historical daily data via AlphaVantage CSV (preferred) and robustly fall back to yfinance.
-    Returns: (normalized_df, charts_dict)
-    The returned DataFrame will include short aliases: 'open','high','low','close','volume'
+    Robust fetch:
+     1) Try AlphaVantage using every key in ALPHA_KEYS (round-robin).
+     2) If AV fails for all keys, robustly try yfinance with several signatures / retries.
+     3) If yfinance fails, try direct Yahoo chart JSON with a browser-like User-Agent.
+    Returns normalized df and charts dict (same structure as before).
     """
     e_av = None
     e_yf = None
+    e_yahoo_json = None
     df = None
     charts = {}
 
-    # ---------- Helper: finalize dataframe (normalize + derive indicators + build charts) ----------
+    # helper to finalize df + chart building (keeps your previous logic)
     def _finalize_df_and_charts(df_in: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
         df_loc = df_in.copy()
-        # flatten/normalize and ensure datetime index
         df_loc = _flatten_multiindex_columns(df_loc)
         df_loc.index = pd.to_datetime(df_loc.index, errors="coerce")
         df_loc = _normalize_columns(df_loc)
         df_loc = df_loc.sort_index()
 
-        # Defensive required columns
         required = ["open", "high", "low", "close", "volume"]
         missing = [c for c in required if c not in df_loc.columns]
         if missing:
             raise ValueError(f"Missing required column(s) {missing} after normalization. Available: {list(df_loc.columns)}")
 
-        # Derived indicators
         df_loc["ma20"] = df_loc["close"].rolling(window=20).mean()
         df_loc["ma50"] = df_loc["close"].rolling(window=50).mean()
         df_loc["rsi"] = calculate_rsi(df_loc["close"])
 
-        # Ensure index is datetime for resampling
         if not pd.api.types.is_datetime64_any_dtype(df_loc.index):
             df_loc.index = pd.to_datetime(df_loc.index, errors="coerce")
             if df_loc.index.isnull().any():
                 df_loc.index = pd.date_range(end=pd.Timestamp.now(), periods=len(df_loc))
 
-        # Monthly snapshot for charts
         df_monthly = df_loc.resample("M").last()
-
-        price_data = []
-        volume_data = []
-        rsi_data = []
+        price_data, volume_data, rsi_data = [], [], []
         for d, row in df_monthly.iterrows():
             close_val = _safe_scalar(row.get("close") if "close" in row.index else row.get("4. close"))
             ma20_val = _safe_scalar(row.get("ma20"))
@@ -291,49 +288,49 @@ def fetch_stock_data(symbol: str, outputsize: str = "compact", timeout: int = 20
 
             rsi_data.append({"date": d.strftime("%b %Y"), "rsi": round(float(rsi_val), 2) if pd.notna(rsi_val) else None})
 
-        charts_loc = {
-            "price_data": price_data,
-            "volume_data": volume_data,
-            "rsi_data": rsi_data,
-        }
-        return df_loc, charts_loc
+        return df_loc, {"price_data": price_data, "volume_data": volume_data, "rsi_data": rsi_data}
 
-    # ---------- 1) Try AlphaVantage CSV with all keys ----------
-    for _ in range(len(ALPHA_KEYS)):
-        try:
-            av_key= get_next_av_key()
-            url = (
-                f"{AV_BASE_URL}?function=TIME_SERIES_DAILY&symbol={symbol}"
-                f"&outputsize={outputsize}&apikey={av_key}&datatype=csv"
-            )
-            logger.info("Fetching CSV from AlphaVantage: %s", url)
-            df = safe_read_csv_from_url(url, timeout=timeout)
-            if df is None or getattr(df, "empty", True):
-                raise RuntimeError("AlphaVantage returned empty CSV")
+    # ---------- 1) Try AlphaVantage using all available keys ----------
+    if ALPHA_KEYS:
+        keys_tried = 0
+        for _ in range(len(ALPHA_KEYS)):
+            av_key = get_next_av_key()
+            keys_tried += 1
+            try:
+                url = (
+                    f"{AV_BASE_URL}?function=TIME_SERIES_DAILY&symbol={symbol}"
+                    f"&outputsize={outputsize}&apikey={av_key}&datatype=csv"
+                )
+                logger.info("Fetching CSV from AlphaVantage with key=%s: %s", av_key, url)
+                df_try = safe_read_csv_from_url(url, timeout=timeout)
+                if df_try is None or getattr(df_try, "empty", True):
+                    raise RuntimeError("AlphaVantage returned empty CSV")
 
-            # set datetime index if present
-            if "timestamp" in df.columns:
-                df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-                df = df.set_index("timestamp")
-            elif "date" in df.columns:
-                df["date"] = pd.to_datetime(df["date"], errors="coerce")
-                df = df.set_index("date")
+                # index normalization
+                if "timestamp" in df_try.columns:
+                    df_try["timestamp"] = pd.to_datetime(df_try["timestamp"], errors="coerce")
+                    df_try = df_try.set_index("timestamp")
+                elif "date" in df_try.columns:
+                    df_try["date"] = pd.to_datetime(df_try["date"], errors="coerce")
+                    df_try = df_try.set_index("date")
 
-            # normalize + sanity
-            df = _normalize_columns(df)
-            df = df.sort_index()
-            if df.empty:
-                raise RuntimeError("AlphaVantage returned empty after normalization")
+                df_try = _normalize_columns(df_try)
+                df_try = df_try.sort_index()
+                if df_try.empty:
+                    raise RuntimeError("AlphaVantage returned empty after normalization")
 
-            # finalize and return
-            df_final, charts = _finalize_df_and_charts(df)
-            logger.info("AlphaVantage provided data for %s with %d rows", symbol, len(df_final))
-            return df_final, charts
+                df_final, charts = _finalize_df_and_charts(df_try)
+                logger.info("AlphaVantage succeeded for %s using key %s (%d rows)", symbol, av_key, len(df_final))
+                return df_final, charts
 
-        except Exception as exc_av:
-            e_av = exc_av
-            logger.warning("AlphaVantage CSV failed for %s: %s", symbol, exc_av)
-            df = None
+            except Exception as exc_av:
+                e_av = exc_av
+                logger.warning("AlphaVantage failed with key %s for %s: %s", av_key, symbol, exc_av)
+                # try next key
+                continue
+        logger.warning("All %d AlphaVantage keys tried and failed (last error: %s)", keys_tried, e_av)
+    else:
+        logger.info("No AlphaVantage keys provided in ALPHA_KEYS; skipping AV attempts.")
 
     # ---------- 2) Robust yfinance fallback ----------
     try:
@@ -341,37 +338,51 @@ def fetch_stock_data(symbol: str, outputsize: str = "compact", timeout: int = 20
     except Exception as imp_err:
         e_yf = imp_err
         logger.exception("Failed to import yfinance: %s", imp_err)
-        # If AV failed and yfinance import failed, raise combined error below
     else:
-        # We'll try a few strategies with retries/backoff
         attempts = 3
         backoff = 1.0
         last_exc = None
         for attempt in range(1, attempts + 1):
             try:
                 logger.info("yfinance attempt %d for %s (download)", attempt, symbol)
-                # prefer download (returns DataFrame). Threads=False to avoid thread pool issues in some environments.
-                df_try = yf.download(symbol, period="1y", progress=False, threads=False, timeout=timeout, auto_adjust=False)
+                # primary: try common download signature (works on newer yfinance)
+                try:
+                    df_try = yf.download(symbol, period="1y", progress=False, threads=True, timeout=timeout, auto_adjust=False)
+                except TypeError:
+                    # some yfinance versions don't accept 'threads' or 'timeout' kw in download
+                    df_try = yf.download(symbol, period="1y", progress=False, auto_adjust=False)
+
                 if df_try is not None and not df_try.empty:
                     df = df_try
                     logger.info("yfinance.download succeeded for %s (%d rows)", symbol, len(df))
                     break
-                # Try Ticker.history as a fallback
+
+                # fallback: Ticker.history with fewer kwargs (avoid 'threads' if it errors)
                 logger.info("yfinance.download returned empty; trying Ticker.history() for %s", symbol)
                 ticker = yf.Ticker(symbol)
-                df_try = ticker.history(period="1y", auto_adjust=False, actions=False, threads=False)
+
+                # Try calling history with a safe set of kwargs depending on signature
+                hist_func = getattr(ticker, "history", None)
+                if hist_func is None:
+                    raise RuntimeError("Ticker.history not available in this yfinance version")
+
+                # attempt with commonly-accepted kwargs, fall back to minimal
+                try:
+                    df_try = ticker.history(period="1y", auto_adjust=False, actions=False)
+                except TypeError as te:
+                    logger.info("Ticker.history signature mismatch: %s. Retrying with minimal args.", te)
+                    df_try = ticker.history(period="1y")
+
                 if df_try is not None and not df_try.empty:
                     df = df_try
                     logger.info("Ticker.history succeeded for %s (%d rows)", symbol, len(df))
                     break
 
-                # if still empty, raise to trigger retry/backoff
                 raise RuntimeError("yfinance returned empty on both download() and Ticker.history()")
 
             except Exception as e_try:
                 last_exc = e_try
                 logger.warning("yfinance attempt %d failed for %s: %s", attempt, symbol, e_try)
-                # small jitter/backoff
                 time.sleep(backoff)
                 backoff *= 2.0
                 continue
@@ -380,20 +391,74 @@ def fetch_stock_data(symbol: str, outputsize: str = "compact", timeout: int = 20
             e_yf = last_exc or RuntimeError("yfinance returned empty after retries")
             logger.warning("yfinance fallback failed for %s: %s", symbol, e_yf)
 
-    # If no data from yfinance either -> raise combined error
+    # If neither AV nor yfinance provided data, try a direct Yahoo JSON endpoint as last resort
     if df is None or getattr(df, "empty", True):
-        logger.error("Data fetch failed for %s. AV error: %s; yfinance error: %s", symbol, e_av, e_yf)
-        raise RuntimeError(f"Data fetch failed for {symbol}. AV error: {e_av if e_av is not None else 'n/a'}; yfinance error: {e_yf if e_yf is not None else 'n/a'}")
+        try:
+            # Use a browser-like User-Agent (helps avoid bot blocks)
+            yahoo_url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1y&interval=1d&includePrePost=false"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)"
+                              " Chrome/115.0.0.0 Safari/537.36",
+                "Accept": "application/json, text/javascript, */*; q=0.01"
+            }
+            logger.info("Attempting direct Yahoo chart JSON for %s", symbol)
+            resp = requests.get(yahoo_url, headers=headers, timeout=timeout)
+            resp.raise_for_status()
+            payload = resp.json()
 
-    # ---------- Post-process dataframe (normalize, aliasing, indicators, charts) ----------
+            # parse JSON -> construct DataFrame
+            chart = payload.get("chart", {})
+            result = chart.get("result")
+            if not result:
+                raise RuntimeError(f"Yahoo JSON returned no result: {payload}")
+
+            meta = result[0].get("meta", {})
+            timestamps = result[0].get("timestamp", [])
+            indicators = result[0].get("indicators", {}).get("quote", [])
+            if not timestamps or not indicators or not indicators[0]:
+                raise RuntimeError("Yahoo JSON missing timestamps/quote data")
+
+            quote = indicators[0]
+            import datetime as _dt
+            rows = []
+            for i, ts in enumerate(timestamps):
+                dt = _dt.datetime.fromtimestamp(ts)
+                o = quote.get("open", [None] * len(timestamps))[i]
+                h = quote.get("high", [None] * len(timestamps))[i]
+                l = quote.get("low", [None] * len(timestamps))[i]
+                c = quote.get("close", [None] * len(timestamps))[i]
+                v = quote.get("volume", [None] * len(timestamps))[i]
+                rows.append({"date": dt, "open": o, "high": h, "low": l, "close": c, "volume": v})
+
+            df_try = pd.DataFrame(rows).set_index("date")
+            if df_try is None or df_try.empty:
+                raise RuntimeError("Parsed Yahoo JSON produced empty DataFrame")
+
+            df = df_try
+            logger.info("Yahoo JSON parsing succeeded for %s (%d rows)", symbol, len(df))
+
+        except Exception as exc_yj:
+            e_yahoo_json = exc_yj
+            logger.warning("Yahoo JSON fallback failed for %s: %s", symbol, exc_yj)
+
+    # If still empty, raise combined error so caller sees full info
+    if df is None or getattr(df, "empty", True):
+        logger.error("Data fetch failed for %s. AV error: %s; yfinance error: %s; yahoo_json error: %s",
+                     symbol, e_av, e_yf, e_yahoo_json)
+        raise RuntimeError(
+            f"Data fetch failed for {symbol}. "
+            f"AV error: {e_av if e_av is not None else 'n/a'}; "
+            f"yfinance error: {e_yf if e_yf is not None else 'n/a'}; "
+            f"yahoo_json error: {e_yahoo_json if e_yahoo_json is not None else 'n/a'}"
+        )
+
+    # Post-process / normalize and finalize charts
     try:
-        # ensure index is datetime and normalize columns
         df.index = pd.to_datetime(df.index, errors="coerce")
         df = _flatten_multiindex_columns(df)
         df = _normalize_columns(df)
         df = df.sort_index()
 
-        # Ensure short alias columns exist (both styles)
         alias_pairs = [
             ("1. open", "open"),
             ("2. high", "high"),
@@ -406,17 +471,15 @@ def fetch_stock_data(symbol: str, outputsize: str = "compact", timeout: int = 20
                 df[short_name] = df[long_name]
             elif short_name in df.columns and long_name not in df.columns:
                 df[long_name] = df[short_name]
-
-        # drop duplicate labels
         df = df.loc[:, ~df.columns.duplicated()]
 
-        # Finalize and return
         df_final, charts = _finalize_df_and_charts(df)
         return df_final, charts
 
     except Exception as final_exc:
         logger.exception("Final processing failed for %s: %s", symbol, final_exc)
         raise RuntimeError(f"Final processing failed for {symbol}: {final_exc}")
+
 
 # ---------- feature builder ----------
 def _build_feature_matrix(df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, list]:
